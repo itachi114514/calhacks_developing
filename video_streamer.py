@@ -29,7 +29,8 @@ class VideoStreamer:
             self.point_cloud_filter = PointCloudFilter()
             self.point_cloud_filter.set_create_point_format(OBFormat.POINT)
             self.point_cloud_filter.set_position_data_scaled(0.1)
-            self.align_filter = AlignFilter(align_to_stream=OBStreamType.COLOR_STREAM)
+            # 设置硬件对齐模式
+            self.config.set_align_mode(OBAlignMode.SW_MODE)
             self.isPointCloud = True
         else:
             self.isPointCloud = False
@@ -97,8 +98,7 @@ class VideoStreamer:
         color_image = cv2.resize(color_image, (self.window_width // 2, self.window_height)) if color_image is not None else None
         depth_image = cv2.resize(depth_image, (self.window_width // 2, self.window_height)) if depth_image is not None else None
         if self.isPointCloud:
-            align_frame = self.align_filter.process(frames)
-            point_cloud_frame = self.point_cloud_filter.process(align_frame)
+            point_cloud_frame = self.point_cloud_filter.process(frames)
             points = self.point_cloud_filter.calculate(point_cloud_frame)
         else:
             points = None
