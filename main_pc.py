@@ -26,7 +26,9 @@ async def main():
             color_image, depth_image, points = await streamer.get_frame()
             if color_image is not None and depth_image is not None:
                 detector.detect(color_image)
-                cls_id = detector.get_class_id("person")
+                cls_id = detector.get_class_id()
+                if not cls_id:
+                    continue
                 points_2d = detector.calculate_centroid()
                 print("cls_id=", cls_id)
                 print("points_2d=", points_2d)

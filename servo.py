@@ -62,6 +62,15 @@ class MultiBoardServoController:
         self.servos[key].angle = angle
         print(f"[OK] ({board_name}, ch{channel}) -> angle = {angle:.1f}°")
 
+    def update_angles(self, angles: list):
+        """批量更新多个舵机角度，angles 为 [angle1, angle2, ...] 列表，元素为浮点数角度"""
+        print("angles:", angles)
+        print("A", angles[:8])
+        print("B", angles[8:])
+        for i, angle in enumerate(angles[:8]): # 前8个舵机，A板
+            self.set_angle("A", i, angle)
+        for i, angle in enumerate(angles[8:]): # 后12个舵机，B板
+            self.set_angle("B", i, angle)
 
     def release(self, board_name:str, channel:int):
         """释放某路舵机（停止维持力）"""

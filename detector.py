@@ -19,7 +19,7 @@ class Detector:
         if isTracked:
             self.track_history = defaultdict(lambda: [])
         # 人，自行车，汽车，摩托车，公交车，卡车，桌子，椅子，笔记本电脑，手机，苹果
-        self.interested_classes = [0, 1, 2, 3, 5, 7, 60, 56, 63, 67]
+        self.interested_classes = [0, 1, 2, 3, 5, 7, 60, 56, 63, 67, 48]
 
     def annotate(self):
         frame = self.result.plot(img=self.img)
@@ -80,7 +80,7 @@ class Detector:
         self.centorid = centroid
         return centroid
 
-    def get_class_id(self, class_name):
+    def get_class_id(self):
         return self.class_ids
 
 if __name__ == '__main__':

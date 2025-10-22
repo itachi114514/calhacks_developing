@@ -1,6 +1,6 @@
 import asyncio
 import websockets
-
+import struct
 
 class WebSocketClient:
     """
@@ -8,11 +8,12 @@ class WebSocketClient:
     它会连接到指定的服务器，并持续接收和打印消息。
     """
 
-    def __init__(self, uri: str):
+    def __init__(self, uri: str, callback: callable):
         """
         初始化客户端。
         :param uri: 要连接的 WebSocket 服务器的 URI (例如 'ws://localhost:8765')
         """
+        self.callback = callback
         self.uri = uri
         print(f"准备连接到 WebSocket 服务器: {self.uri}")
 
@@ -28,8 +29,17 @@ class WebSocketClient:
                     print(f"已成功连接到 {self.uri}")
                     # 使用 async for 循环来优雅地处理接收到的消息
                     # 这个循环会持续等待，直到有新消息到达
-                    async for message in websocket:
-                        print(f"收到消息: {message}")
+                    while True:
+                        try:
+                            async for message in websocket:
+                                message = self.unpack_msg(message)
+                                print(f"收到消息: {message}")
+                                self.callback(message)
+                        except websockets.exceptions.ConnectionClosedOK:
+                            print("连接已被服务器正常关闭。")
+                            break
+                        except Exception as e:
+                            print(f"处理消息时发生错误: {e}")
 
             except ConnectionRefusedError:
                 print(f"连接被拒绝。请确保服务端正在 {self.uri} 上运行。")
@@ -39,6 +49,9 @@ class WebSocketClient:
             except Exception as e:
                 print(f"发生了一个未知错误: {e}")
             await asyncio.sleep(1)
+
+    def unpack_msg(self, msg):
+        return struct.unpack("!20d", msg)
 
     def run(self):
         """
@@ -58,8 +71,13 @@ if __name__ == "__main__":
     # 如果你的服务端运行在另一台机器上，请将 'localhost' 替换为相应的 IP 地址
     SERVER_URI = "ws://localhost:8765"
 
+    # from servo import MultiBoardServoController
+    # controller = MultiBoardServoController()
+    def func(msg):
+        msg = struct.unpack("!20d", msg)
+        print(f"处理消息: {msg}")
     # 创建客户端实例
-    client = WebSocketClient(SERVER_URI)
+    client = WebSocketClient(SERVER_URI, callback=func)
 
     # 启动客户端
     client.run()

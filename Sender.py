@@ -2,8 +2,7 @@ import websockets
 import struct
 from math import pi
 import asyncio
-import json
-
+import struct
 
 class WebSocketServer:
     """
@@ -21,6 +20,7 @@ class WebSocketServer:
         self.port = port
         self.message_queue = asyncio.Queue()
         self.clients = set()  # 用于存储所有连接的客户端
+        self.servo_mapping_info = ServoMappingInfo()
         print(f"WebSocket 服务器准备在 ws://{self.host}:{self.port} 启动")
 
     async def _handler(self, websocket):
@@ -48,13 +48,20 @@ class WebSocketServer:
             # 等待队列中有新消息。这行代码会在此暂停，直到有消息为止。
             message = await self.message_queue.get()
 
-            print(f"从队列中取出消息: {message}，准备广播给 {len(self.clients)} 个客户端。")
-            # 将 Python 对象序列化为 JSON 字符串以便传输
-            json_message = json.dumps(message)
-            await asyncio.gather(*[client.send(json_message) for client in self.clients])
+            processed_message = self.process_message(message)
+            print(processed_message)
+            await asyncio.gather(*[client.send(processed_message) for client in self.clients])
 
             # 标记任务已完成
             self.message_queue.task_done()
+
+    def process_message(self, message):
+        servo_commands = [0] * 20
+        for obj in message:
+            servo_ids, angle = self.servo_mapping_info.process_object(obj)
+            for servo_id in servo_ids:
+                servo_commands[servo_id] = min(servo_commands[servo_id], int(angle)) if servo_commands[servo_id] !=0 else int(angle)
+        return struct.pack('!20d', *servo_commands)
 
     async def put_message(self, message: list[tuple]):
         """
@@ -92,74 +99,61 @@ class WebSocketServer:
         except KeyboardInterrupt:
             print("\n服务器正在关闭...")
 
+class ServoMappingInfo:
+    def __init__(self):
+        self.angle_interval = 180/5 # 每个舵机覆盖的角度范围
+        self.object_map = {
+            0: [1, 1, 1, 1],    # 人
+            1: [1, 1, 1, 0],    # 自行车
+            2: [1, 1, 0, 1],    # 汽车
+            3: [1, 0, 1, 1],    # 摩托车
+            5: [0, 1, 1, 1],    # 公交车
+            7: [1, 1, 0, 0],    # 卡车
+            60: [1, 0, 1, 0],   # 桌子
+            56: [0, 1, 0, 1],   # 椅子
+            63: [1, 0, 0, 1],   # 笔记本电脑
+            67: [0, 1, 1, 0],   # 手机
+            47: [0, 0, 1, 1],   # 苹果
+        }
 
-# --- 如何使用这个类 ---
-if __name__ == "__main__":
-    # 创建服务器实例，监听本地所有网络接口的 8765 端口
-    server = WebSocketServer('0.0.0.0', 8765)
-    # 启动服务器
-    server.run()
+    def which_direction(self, theta):
+        # 根据 theta 确定使用哪个方向的舵机
+        index = theta  // self.angle_interval
+        return int(index)
 
-class Sender:
-    def __init__(self, host='localhost', port=12345):
-        asyncio.create_task(self.start_server())
+    def which_in_four(self, cls_id):
+        # 根据类别 ID 确定在四个舵机中的哪几个
+        return self.object_map.get(cls_id)
 
+    def which_servos(self, theta):
+        index = self.which_direction(theta)
+        servo_id = index * 4
+        return servo_id
 
-    def send_message(self, message):
-        try:
-            self.sock.sendto(message.encode(), (self.host, self.port))
-            print(f"Message sent to {self.host}:{self.port}")
-        except Exception as e:
-            print(f"Error sending message: {e}")
+    def get_servo_ids(self, class_id, theta):
+        index = self.which_direction(theta)
+        in_four = self.which_in_four(class_id)
+        servo_ids = []
+        for i in range(4):
+            if in_four[i]:
+                servo_ids.append(index * 4 + i)
+        return servo_ids
 
-    def close(self):
-        self.sock.close()
-
-    def convert_to_servo_angle(self, distance, min_input=0, max_input=10000, min_angle=0, max_angle=90):
-        # 将输入值线性映射到舵机角度范围
+    def map_distance_to_servo_angle(self, distance):
+        # 将距离映射到舵机角度
+        min_input = 0
+        max_input = 1000
+        min_angle = 0
+        max_angle = 90
         if distance < min_input or distance > max_input:
             raise ValueError(f"Value {distance} out of range ({min_input}-{max_input})")
         angle = (distance - min_input) / (max_input - min_input) * (max_angle - min_angle) + min_angle
-
         return angle
 
-    def convert_to_servo_id(self, id, min_id=0, max_id=15):
-        if id <= 15:
-            board = 0 # Board A
-        else:
-            board = 1 # Board B
-            id -= 16
-        return board << 4 | id
-
-    def convert_class_id(self, class_id):
-        classes = [0, 1, 2, 3, 5, 7, 60, 56, 63, 67]
-        assert class_id in classes, f"Class id {class_id} not in {classes}"
-        # return classes.index(class_id)<<5
-        return classes.index(class_id)
-
-    def convert_theta_to_servo_ids(self, theta):
-        # mock logic
-        id0 = theta//45
-        return [id0+i for i in range(4)]
-
-    def encode_message(self, message):
-        for obj in message:
-            class_id = self.convert_class_id(obj[0])
-            angle = self.convert_to_servo_angle(obj[1])
-            theta = angle * 180.0 / pi
-            servo_ids = self.convert_theta_to_servo_ids(theta)
-        # Some logic here
-        encoded_message = ["something"]
-        struct.pack_into("<I", encoded_message, *servo_ids)
-
-    def send(self, message):
-        self.send_message(message)
-
-    def encode_and_send(self, message):
-        byte_array = bytearray()
-        for obj in message:
-            id_and_channel = self.convert_to_servo_id(obj['id'])
-            class_id = self.convert_class_id(obj['class_id'])
-            angle = int(self.convert_to_servo_angle(obj['distance']))
-            byte_array.extend(struct.pack('BBB', id_and_channel, class_id, angle))
-        self.send_message(byte_array.decode('latin1'))
+    def process_object(self, object):
+        class_id = object[0]
+        distance = object[1]
+        theta = object[2]
+        servo_ids = self.get_servo_ids(class_id, theta)
+        angle = self.map_distance_to_servo_angle(distance)
+        return servo_ids, angle
