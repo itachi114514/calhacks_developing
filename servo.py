@@ -22,12 +22,12 @@ class MultiBoardServoController:
     ):
         self.boards = {
             "A": 0x40,
-            "B": 0x41,
+            # "B": 0x41,
         } if not boards else boards
 
         self.channels = {
             "A": list(range(16)),
-            "B": list(range(16)),
+            # "B": list(range(16)),
         } if not channels else channels
         #Initialize I2C
         self.i2c = busio.I2C(SCL, SDA)
@@ -65,12 +65,14 @@ class MultiBoardServoController:
     def update_angles(self, angles: list):
         """批量更新多个舵机角度，angles 为 [angle1, angle2, ...] 列表，元素为浮点数角度"""
         print("angles:", angles)
-        print("A", angles[:8])
-        print("B", angles[8:])
-        for i, angle in enumerate(angles[:8]): # 前8个舵机，A板
+        # print("A", angles[:8])
+        # print("B", angles[8:])
+        # for i, angle in enumerate(angles[:8]): # 前8个舵机，A板
+        #     self.set_angle("A", i, angle)
+        # for i, angle in enumerate(angles[8:]): # 后12个舵机，B板
+        #     self.set_angle("B", i, angle)
+        for i, angle in enumerate(angles):
             self.set_angle("A", i, angle)
-        for i, angle in enumerate(angles[8:]): # 后12个舵机，B板
-            self.set_angle("B", i, angle)
 
     def release(self, board_name:str, channel:int):
         """释放某路舵机（停止维持力）"""
@@ -104,6 +106,9 @@ class MultiBoardServoController:
             print(f"[INFO] PCA9685 '{name}' deinitialized.")
         print("[INFO] Controller closed.")
 
+    def __del__(self):
+        self.close()
+
 # Example usage:
 if __name__ == "__main__":
 
@@ -113,7 +118,7 @@ if __name__ == "__main__":
         # 简单自检：四路舵机依次到 0°、90°、180°、再回 90°
         sequence = [0, 90, 180, 90, 0]
         for angle in sequence:
-            for board_name in ["A", "B"]:
+            for board_name in ["A"]:
                 for channel in range(16):
                     try:
                         ctrl.set_angle(board_name, channel, angle)

@@ -18,7 +18,7 @@ video_sensor_types = [
 ]
 
 class VideoStreamer:
-    def __init__(self, isCallback=True, isPointcloud=True):
+    def __init__(self, isCallback=True, isPointcloud=True, depthFilter=False, isAccel=True):
         self.window_width = 1280
         self.window_height = 720
         self.MIN_DEPTH = 20  # 20mm
@@ -38,6 +38,13 @@ class VideoStreamer:
             self.get_frame = self.non_callback_get_frame
             return
 
+        if isAccel:
+            self.isAccel = True
+            self.config.enable_accel_stream()
+            self.config.enable_gyro_stream()
+            self.config.set_frame_aggregate_output_mode(OBFrameAggregateOutputMode.FULL_FRAME_REQUIRE)
+        else:
+            self.isAccel = False
         self.loop = asyncio.get_running_loop()
         device = self.pipeline.get_device()
         sensor_list = device.get_sensor_list()
@@ -50,6 +57,13 @@ class VideoStreamer:
                 except:
                     print(f"Failed to enable sensor type: {sensor_type}")
                     continue
+        if depthFilter:
+            self.depthFilter = True
+            depth_sensor = device.get_sensor(OBSensorType.DEPTH_SENSOR)
+            # 4.Get a list of post-processing filtering recommendations
+            self.filter_list = depth_sensor.get_recommended_filters()
+        else:
+            self.depthFilter = False
         profiles = self.pipeline.get_stream_profile_list(OBSensorType.DEPTH_SENSOR)
         if profiles is None:
             raise RuntimeError("No proper depth profile, cannot start streaming")
@@ -87,15 +101,37 @@ class VideoStreamer:
     async def get_frame(self):
         frames = await frames_queue.get()
         color_image, depth_image, points = self.process_frame(frames)
+        accel_data, gyro_data = self.get_accel_frame(frames)
+        if self.isAccel:
+            if accel_data is not None and gyro_data is not None:
+                return color_image, depth_image, points, accel_data, gyro_data
+            else:
+                return color_image, depth_image, points, None, None
         return color_image, depth_image, points
+
+    def get_accel_frame(self, frames):
+        accel_frame = frames.get_frame(OBFrameType.ACCEL_FRAME)
+        gyro_frame = frames.get_frame(OBFrameType.GYRO_FRAME)
+        accel_frame = accel_frame.as_accel_frame() if accel_frame else None
+        gyro_frame = gyro_frame.as_gyro_frame() if gyro_frame else None
+        if not accel_frame or not gyro_frame:
+            return None, None
+        accel_data = (accel_frame.get_x(), accel_frame.get_y(), accel_frame.get_z())
+        gyro_data = (gyro_frame.get_x(), gyro_frame.get_y(), gyro_frame.get_z())
+        return accel_data, gyro_data
 
     def process_frame(self, frames):
         color_frame = frames.get_color_frame()
         depth_frame = frames.get_depth_frame()
         color_image = frame_to_bgr_image(color_frame) if color_frame else None
         depth_image = self.process_depth(depth_frame) if depth_frame else None
-        color_image = cv2.resize(color_image, (self.window_width // 2, self.window_height)) if color_image is not None else None
-        depth_image = cv2.resize(depth_image, (self.window_width // 2, self.window_height)) if depth_image is not None else None
+        color_image = cv2.resize(color_image, (self.window_width, self.window_height)) if color_image is not None else None
+        depth_image = cv2.resize(depth_image, (self.window_width, self.window_height)) if depth_image is not None else None
+        if self.depthFilter:
+            for post_filter in self.filter_list:
+                if post_filter.is_enabled():
+                    # Only apply enabled filters
+                    depth_frame = post_filter.process(depth_frame)
         if self.isPointCloud:
             align_frame = self.align_filter.process(frames)
             point_cloud_frame = self.point_cloud_filter.process(align_frame)

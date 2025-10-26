@@ -25,7 +25,7 @@ class WebSocketClient:
         # 使用 async with 语句来自动管理连接的建立和关闭
         while True:
             try:
-                async with websockets.connect(self.uri) as websocket:
+                async with websockets.connect(self.uri, ping_interval=5, ping_timeout=1) as websocket:
                     print(f"已成功连接到 {self.uri}")
                     # 使用 async for 循环来优雅地处理接收到的消息
                     # 这个循环会持续等待，直到有新消息到达
@@ -51,7 +51,7 @@ class WebSocketClient:
             await asyncio.sleep(1)
 
     def unpack_msg(self, msg):
-        return struct.unpack("!20d", msg)
+        return struct.unpack("!16d", msg)
 
     def run(self):
         """
@@ -61,6 +61,7 @@ class WebSocketClient:
             # 启动 asyncio 事件循环并运行 _listen 协程
             asyncio.run(self._listen())
         except KeyboardInterrupt:
+            self.callback([0]*16)
             # 允许用户通过 Ctrl+C 来优雅地停止客户端
             print("\n客户端正在关闭...")
 
